@@ -58,6 +58,8 @@ class Settings:
     source_dir: Path
     index_dir: Path
     evaluation_dir: Path
+    clone_timeout_seconds: int
+    clone_max_size_bytes: int
 
 
 def load_settings(dotenv_path: Path | None = None) -> Settings:
@@ -92,6 +94,10 @@ def load_settings(dotenv_path: Path | None = None) -> Settings:
         source_dir=source_dir,
         index_dir=index_dir,
         evaluation_dir=evaluation_dir,
+        clone_timeout_seconds=_integer(values, "CLONE_TIMEOUT_SECONDS", 120),
+        clone_max_size_bytes=_integer(
+            values, "CLONE_MAX_SIZE_BYTES", 200 * 1024 * 1024
+        ),
     )
     if settings.chunk_overlap >= settings.chunk_size:
         raise ValueError("CHUNK_OVERLAP must be smaller than CHUNK_SIZE")

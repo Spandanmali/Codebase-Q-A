@@ -1,0 +1,2 @@
+TOKEN_TTL_SECONDS = 3600
+APP_NAME = "sample-app"

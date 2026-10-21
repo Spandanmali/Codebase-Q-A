@@ -85,8 +85,8 @@ def load_settings(dotenv_path: Path | None = None) -> Settings:
 
     settings = Settings(
         embedding_model=_setting(
-            values, "EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2"
-        ),
+    values, "EMBEDDING_MODEL", "nomic-embed-text"
+),
         generation_model=_setting(values, "GENERATION_MODEL", "google/flan-t5-small"),
         chunk_size=_integer(values, "CHUNK_SIZE", 800),
         chunk_overlap=_integer(values, "CHUNK_OVERLAP", 120),

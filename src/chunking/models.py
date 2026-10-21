@@ -18,3 +18,4 @@ class Chunk:
     symbol_type: str | None = None
     parent_class: str | None = None
     docstring: str | None = None
+    context: str | None = None

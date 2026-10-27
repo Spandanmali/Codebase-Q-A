@@ -1,0 +1,41 @@
+- id: config-defaults
+  repo: https://github.com/Spandanmali/Codebase-Q-A.git
+  commit: 95e8ec68894caa9327792d4c71e1a142016819b7
+  question: What is the default chunk size used by the application?
+  question_type: lookup
+  gold_files:
+    - config.py
+  gold_ranges:
+    - file: config.py
+      start: 74
+      end: 74
+  reference_answer: The default chunk size is 800.
+
+- id: fixture-authentication
+  repo: https://github.com/Spandanmali/Codebase-Q-A.git
+  commit: 95e8ec68894caa9327792d4c71e1a142016819b7
+  question: Which fixture modules participate in the sample authentication flow?
+  question_type: multi-file
+  gold_files:
+    - tests/fixtures/sample_repo/login.py
+    - tests/fixtures/sample_repo/token.py
+    - tests/fixtures/sample_repo/users.py
+  gold_ranges:
+    - file: tests/fixtures/sample_repo/login.py
+      start: 1
+      end: 1
+    - file: tests/fixtures/sample_repo/token.py
+      start: 1
+      end: 1
+    - file: tests/fixtures/sample_repo/users.py
+      start: 1
+      end: 1
+  reference_answer: The flow uses the login, token, and users fixture modules.
+
+- id: missing-feature
+  repo: https://github.com/Spandanmali/Codebase-Q-A.git
+  commit: 95e8ec68894caa9327792d4c71e1a142016819b7
+  question: What production database migration scheduler is implemented?
+  question_type: unanswerable
+  gold_files: []
+  gold_ranges: []

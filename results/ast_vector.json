@@ -1,0 +1,78 @@
+{
+  "timestamp": "2026-10-27T18:23:34.375727+00:00",
+  "config": "ast_vector",
+  "chunker": "ast",
+  "strategy": "vector",
+  "top_k": 5,
+  "models": {
+    "embedding": "nomic-embed-text",
+    "generation": "google/flan-t5-small"
+  },
+  "commit_hashes": [
+    "95e8ec68894caa9327792d4c71e1a142016819b7"
+  ],
+  "metrics": {
+    "conceptual": {
+      "count": 1,
+      "file": {
+        "recall_at_k": 0.0,
+        "mrr": 0.0,
+        "hit_rate": 0.0
+      },
+      "chunk": {
+        "recall_at_k": 0.0,
+        "mrr": 0.0,
+        "hit_rate": 0.0
+      }
+    },
+    "lookup": {
+      "count": 3,
+      "file": {
+        "recall_at_k": 0.3333333333333333,
+        "mrr": 0.3333333333333333,
+        "hit_rate": 0.3333333333333333
+      },
+      "chunk": {
+        "recall_at_k": 0.0,
+        "mrr": 0.0,
+        "hit_rate": 0.0
+      }
+    },
+    "multi-file": {
+      "count": 2,
+      "file": {
+        "recall_at_k": 0.0,
+        "mrr": 0.0,
+        "hit_rate": 0.0
+      },
+      "chunk": {
+        "recall_at_k": 0.0,
+        "mrr": 0.0,
+        "hit_rate": 0.0
+      }
+    },
+    "overall": {
+      "count": 6,
+      "file": {
+        "recall_at_k": 0.16666666666666666,
+        "mrr": 0.16666666666666666,
+        "hit_rate": 0.16666666666666666
+      },
+      "chunk": {
+        "recall_at_k": 0.0,
+        "mrr": 0.0,
+        "hit_rate": 0.0
+      }
+    }
+  },
+  "unanswerable": [
+    {
+      "id": "missing-feature",
+      "question": "What production database migration scheduler is implemented?"
+    },
+    {
+      "id": "sample-005",
+      "question": "How is Kubernetes pod autoscaling configured?"
+    }
+  ]
+}

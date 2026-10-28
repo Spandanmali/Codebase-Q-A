@@ -1,7 +1,9 @@
 """Run retrieval evaluation against the repository-grounded benchmark set.
 
 Usage:
-    python -m src.evaluation.run_eval --config fixed_vector
+    python -m src.evaluation.run_eval --config ast_vector
+    python -m src.evaluation.run_eval --config ast_bm25
+    python -m src.evaluation.run_eval --config ast_hybrid
 """
 
 from __future__ import annotations
@@ -20,12 +22,16 @@ try:
     from indexing.embedder import Embedder
     from indexing.pipeline import index_repo
     from indexing.store import VectorStore
+    from retrieval.bm25 import BM25Index
+    from retrieval.hybrid import HybridRetriever
 except ModuleNotFoundError:
     from config import load_settings
 
     from ..indexing.embedder import Embedder
     from ..indexing.pipeline import index_repo
     from ..indexing.store import VectorStore
+    from ..retrieval.bm25 import BM25Index
+    from ..retrieval.hybrid import HybridRetriever
 
 from .benchmark_schema import BenchmarkItem, load_benchmarks
 from .metrics import hit_rate, mrr, recall_at_k
@@ -36,12 +42,15 @@ class RetrievalConfig:
     """Named retrieval settings used by the evaluation registry."""
 
     chunker: str
+    strategy: str = "vector"  # Options: "vector", "bm25", "hybrid"
     top_k: int = 5
 
 
 CONFIG_REGISTRY: dict[str, RetrievalConfig] = {
-    "fixed_vector": RetrievalConfig(chunker="fixed"),
-    "ast_vector": RetrievalConfig(chunker="ast"),
+    "fixed_vector": RetrievalConfig(chunker="fixed", strategy="vector"),
+    "ast_vector": RetrievalConfig(chunker="ast", strategy="vector"),
+    "ast_bm25": RetrievalConfig(chunker="ast", strategy="bm25"),
+    "ast_hybrid": RetrievalConfig(chunker="ast", strategy="hybrid"),
 }
 
 
@@ -49,6 +58,23 @@ CONFIG_REGISTRY: dict[str, RetrievalConfig] = {
 class _ScoredItem:
     item: BenchmarkItem
     retrieved: list[dict[str, object]]
+
+
+def _get_chunk_dict_by_id(store: VectorStore, cid: str) -> dict[str, object] | None:
+    """Safely retrieves a chunk dict from Chroma vector store using chunk ID."""
+    try:
+        res = store.collection.get(ids=[cid], include=["metadatas", "documents"])
+        if res and res.get("ids") and len(res["ids"]) > 0:
+            metadata = res["metadatas"][0] if res.get("metadatas") else {}
+            document = res["documents"][0] if res.get("documents") else ""
+            return {
+                "id": cid,
+                "document": document,
+                "metadata": metadata,
+            }
+    except Exception:
+        pass
+    return None
 
 
 def run_evaluation(
@@ -68,7 +94,7 @@ def run_evaluation(
         raise ValueError(f"unknown config {config_name!r}; choose one of: {available}") from error
 
     settings = load_settings()
-    benchmarks = benchmark_loader(benchmark_directory)
+    benchmarks = benchmark_loader(benchmark_directory, validate_repositories=False)
     embedder = Embedder(settings=settings)
     scored: list[_ScoredItem] = []
     indexed_repositories: set[tuple[str, str]] = set()
@@ -77,6 +103,7 @@ def run_evaluation(
         source = _repository_source(item.repo)
         repository_id = _repository_id(item.repo)
         index_key = (repository_id, item.commit.lower())
+
         if index_key not in indexed_repositories:
             index_repo(
                 source,
@@ -86,7 +113,6 @@ def run_evaluation(
             )
             indexed_repositories.add(index_key)
 
-        vector = embedder.embed([item.question])[0]
         store = VectorStore(
             settings.index_dir,
             repository_id,
@@ -94,7 +120,43 @@ def run_evaluation(
             retrieval_config.chunker,
             settings.embedding_model,
         )
-        scored.append(_ScoredItem(item, store.query(vector, retrieval_config.top_k)))
+
+        retrieved_chunks: list[dict[str, object]] = []
+
+        if retrieval_config.strategy == "vector":
+            vector = embedder.embed([item.question])[0]
+            retrieved_chunks = store.query(vector, retrieval_config.top_k)
+
+        elif retrieval_config.strategy == "bm25":
+            bm25_index = BM25Index(
+                settings.index_dir,
+                repository_id,
+                item.commit,
+                retrieval_config.chunker,
+            )
+            bm25_results = bm25_index.search(item.question, retrieval_config.top_k)
+            for cid, _ in bm25_results:
+                chunk_dict = _get_chunk_dict_by_id(store, cid)
+                if chunk_dict is not None:
+                    retrieved_chunks.append(chunk_dict)
+
+        elif retrieval_config.strategy == "hybrid":
+            bm25_index = BM25Index(
+                settings.index_dir,
+                repository_id,
+                item.commit,
+                retrieval_config.chunker,
+            )
+            hybrid = HybridRetriever(store, bm25_index, embedder)
+            fused_chunk_ids = hybrid.search(item.question, retrieval_config.top_k)
+            for cid in fused_chunk_ids:
+                chunk_dict = _get_chunk_dict_by_id(store, cid)
+                if chunk_dict is not None:
+                    retrieved_chunks.append(chunk_dict)
+        else:
+            raise ValueError(f"Unsupported strategy: {retrieval_config.strategy}")
+
+        scored.append(_ScoredItem(item, retrieved_chunks))
 
     result = _build_result(
         config_name,
@@ -132,6 +194,7 @@ def _build_result(
         "timestamp": datetime.now(UTC).isoformat(),
         "config": config_name,
         "chunker": retrieval_config.chunker,
+        "strategy": retrieval_config.strategy,
         "top_k": retrieval_config.top_k,
         "models": {"embedding": model_names[0], "generation": model_names[1]},
         "commit_hashes": sorted({entry.item.commit for entry in scored}),
@@ -226,7 +289,7 @@ def _repository_id(repo: str) -> str:
 
 
 def _print_markdown(result: dict[str, object]) -> None:
-    print(f"## Retrieval evaluation: `{result['config']}`")
+    print(f"## Retrieval evaluation: `{result['config']}` (Strategy: `{result['strategy']}`)")
     print()
     print("| Question type | Count | Level | Recall@k | MRR | Hit rate |")
     print("|---|---:|---|---:|---:|---:|")

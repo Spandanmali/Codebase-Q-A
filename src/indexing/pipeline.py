@@ -14,11 +14,13 @@ try:
     from chunking.fixed import chunk_fixed
     from ingestion.clone import clone_repo
     from ingestion.discover import discover_files
+    from retrieval.bm25 import BM25Index
 except ModuleNotFoundError:
     from ..chunking import build_embedding_text, chunk_file
     from ..chunking.fixed import chunk_fixed
     from ..ingestion.clone import clone_repo
     from ..ingestion.discover import discover_files
+    from ..retrieval.bm25 import BM25Index
 from config import load_settings
 
 from .embedder import Embedder
@@ -101,6 +103,7 @@ def index_repo(
             chunker,
             settings.embedding_model,
         )
+        bm25_index = BM25Index(settings.index_dir, repository, actual_commit, chunker)
         if not force and store.is_indexed():
             LOGGER.info(
                 "repository %s at %s with %s chunks is already indexed; skipping",
@@ -120,6 +123,7 @@ def index_repo(
         _log_stage("discover", discover_started)
         if not files:
             LOGGER.info("repository %s is empty or has no supported files", repository)
+            bm25_index.build([])
             store.mark_indexed()
             return {
                 "files": 0,
@@ -129,6 +133,7 @@ def index_repo(
             }
 
         stats: dict[str, int | float] = {"files": 0, "skipped": 0, "chunks": 0}
+        indexed_chunks = []
         for entry in files:
             relative_path = str(entry["path"])
             file_path = working_path / relative_path
@@ -150,6 +155,7 @@ def index_repo(
                 _log_stage(f"embed {relative_path}", embed_started)
                 store_started = time.perf_counter()
                 store.add_chunks(chunks, vectors)
+                indexed_chunks.extend(chunks)
                 _log_stage(f"store {relative_path}", store_started)
                 stats["files"] += 1
                 stats["chunks"] += len(chunks)
@@ -159,6 +165,7 @@ def index_repo(
 
         if stats["files"] == 0 and stats["skipped"] > 0:
             LOGGER.info("no files could be indexed; skipped %s file(s)", stats["skipped"])
+        bm25_index.build(indexed_chunks)
         store.mark_indexed()
         stats["time"] = time.perf_counter() - started_total
         return stats

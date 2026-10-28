@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from indexing import pipeline
+from retrieval.bm25 import BM25Index
 
 
 class FakeEmbedder:
@@ -76,3 +77,10 @@ def test_indexing_same_repository_twice_does_not_duplicate(
     assert first["chunks"] == 1
     assert second["files"] == 0
     assert second["chunks"] == 1
+    bm25 = BM25Index(
+        pipeline_settings.index_dir,
+        str(tmp_path.resolve()),
+        "local",
+        "ast",
+    ).load()
+    assert bm25.search("value", 1)[0][0].startswith("ast:")

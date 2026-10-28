@@ -4,6 +4,7 @@ Usage:
     python -m src.evaluation.run_eval --config ast_vector
     python -m src.evaluation.run_eval --config ast_bm25
     python -m src.evaluation.run_eval --config ast_hybrid
+    python -m src.evaluation.run_eval --config ast_hybrid_rerank
 """
 
 from __future__ import annotations
@@ -23,7 +24,8 @@ try:
     from indexing.pipeline import index_repo
     from indexing.store import VectorStore
     from retrieval.bm25 import BM25Index
-    from retrieval.hybrid import HybridRetriever
+    from retrieval.pipeline import RetrievalPipeline
+    from retrieval.rerank import Reranker
 except ModuleNotFoundError:
     from config import load_settings
 
@@ -31,7 +33,8 @@ except ModuleNotFoundError:
     from ..indexing.pipeline import index_repo
     from ..indexing.store import VectorStore
     from ..retrieval.bm25 import BM25Index
-    from ..retrieval.hybrid import HybridRetriever
+    from ..retrieval.pipeline import RetrievalPipeline
+    from ..retrieval.rerank import Reranker
 
 from .benchmark_schema import BenchmarkItem, load_benchmarks
 from .metrics import hit_rate, mrr, recall_at_k
@@ -44,6 +47,29 @@ class RetrievalConfig:
     chunker: str
     strategy: str = "vector"  # Options: "vector", "bm25", "hybrid"
     top_k: int = 5
+    vector: bool | None = None
+    bm25: bool | None = None
+    hybrid: bool | None = None
+    rerank: bool = False
+    graph_expansion: bool = False
+
+    def pipeline_flags(self) -> dict[str, bool]:
+        """Return stage flags, preserving compatibility with strategy-only configs."""
+        if self.vector is None and self.bm25 is None and self.hybrid is None:
+            return {
+                "vector": self.strategy in {"vector", "hybrid"},
+                "bm25": self.strategy in {"bm25", "hybrid"},
+                "hybrid": self.strategy == "hybrid",
+                "rerank": self.rerank,
+                "graph_expansion": self.graph_expansion,
+            }
+        return {
+            "vector": self.vector is True,
+            "bm25": self.bm25 is True,
+            "hybrid": self.hybrid is True,
+            "rerank": self.rerank,
+            "graph_expansion": self.graph_expansion,
+        }
 
 
 CONFIG_REGISTRY: dict[str, RetrievalConfig] = {
@@ -51,6 +77,14 @@ CONFIG_REGISTRY: dict[str, RetrievalConfig] = {
     "ast_vector": RetrievalConfig(chunker="ast", strategy="vector"),
     "ast_bm25": RetrievalConfig(chunker="ast", strategy="bm25"),
     "ast_hybrid": RetrievalConfig(chunker="ast", strategy="hybrid"),
+    "ast_hybrid_rerank": RetrievalConfig(
+        chunker="ast",
+        strategy="hybrid",
+        vector=True,
+        bm25=True,
+        hybrid=True,
+        rerank=True,
+    ),
 }
 
 
@@ -121,40 +155,27 @@ def run_evaluation(
             settings.embedding_model,
         )
 
-        retrieved_chunks: list[dict[str, object]] = []
-
-        if retrieval_config.strategy == "vector":
-            vector = embedder.embed([item.question])[0]
-            retrieved_chunks = store.query(vector, retrieval_config.top_k)
-
-        elif retrieval_config.strategy == "bm25":
-            bm25_index = BM25Index(
+        flags = retrieval_config.pipeline_flags()
+        bm25_index = (
+            BM25Index(
                 settings.index_dir,
                 repository_id,
                 item.commit,
                 retrieval_config.chunker,
-            )
-            bm25_results = bm25_index.search(item.question, retrieval_config.top_k)
-            for cid, _ in bm25_results:
-                chunk_dict = _get_chunk_dict_by_id(store, cid)
-                if chunk_dict is not None:
-                    retrieved_chunks.append(chunk_dict)
-
-        elif retrieval_config.strategy == "hybrid":
-            bm25_index = BM25Index(
-                settings.index_dir,
-                repository_id,
-                item.commit,
-                retrieval_config.chunker,
-            )
-            hybrid = HybridRetriever(store, bm25_index, embedder)
-            fused_chunk_ids = hybrid.search(item.question, retrieval_config.top_k)
-            for cid in fused_chunk_ids:
-                chunk_dict = _get_chunk_dict_by_id(store, cid)
-                if chunk_dict is not None:
-                    retrieved_chunks.append(chunk_dict)
-        else:
-            raise ValueError(f"Unsupported strategy: {retrieval_config.strategy}")
+            ).load()
+            if flags["bm25"]
+            else None
+        )
+        reranker = Reranker(settings=settings) if flags["rerank"] else None
+        pipeline = RetrievalPipeline(
+            vector_store=store,
+            embedder=embedder,
+            bm25_index=bm25_index,
+            reranker=reranker,
+            chunk_loader=lambda cid: _get_chunk_dict_by_id(store, cid),
+            **flags,
+        )
+        retrieved_chunks = pipeline.retrieve(item.question, retrieval_config.top_k)
 
         scored.append(_ScoredItem(item, retrieved_chunks))
 

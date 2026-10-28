@@ -60,6 +60,7 @@ class Settings:
     evaluation_dir: Path
     clone_timeout_seconds: int
     clone_max_size_bytes: int
+    reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 
 
 def load_settings(dotenv_path: Path | None = None) -> Settings:
@@ -97,6 +98,11 @@ def load_settings(dotenv_path: Path | None = None) -> Settings:
         clone_timeout_seconds=_integer(values, "CLONE_TIMEOUT_SECONDS", 120),
         clone_max_size_bytes=_integer(
             values, "CLONE_MAX_SIZE_BYTES", 200 * 1024 * 1024
+        ),
+        reranker_model=_setting(
+            values,
+            "RERANKER_MODEL",
+            "cross-encoder/ms-marco-MiniLM-L-6-v2",
         ),
     )
     if settings.chunk_overlap >= settings.chunk_size:

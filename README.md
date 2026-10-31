@@ -75,6 +75,16 @@ The answer command embeds the question, retrieves the nearest chunks, and
 sends only those chunks to the configured local Ollama chat model. It prints
 the answer followed by the source file and line ranges used.
 
+Print node and edge counts for a local Python repository graph:
+
+```text
+python -m src.app.cli graph-stats C:\path\to\repository
+```
+
+The graph builder records files, classes, functions, and routes, with import,
+definition, call, and route-handler relationships. Graphs can also be saved
+and loaded as JSON through `src.graph.build`.
+
 Repository cloning uses `SOURCE_DIR` as its trusted base and creates a fresh
 temporary child directory; the caller's destination argument is never used as
 a filesystem path. `CLONE_TIMEOUT_SECONDS` defaults to 120 seconds and

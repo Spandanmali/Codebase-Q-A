@@ -5,6 +5,7 @@ Usage:
     python -m src.evaluation.run_eval --config ast_bm25
     python -m src.evaluation.run_eval --config ast_hybrid
     python -m src.evaluation.run_eval --config ast_hybrid_rerank
+    python -m src.evaluation.run_eval --config ast_hybrid_rerank_graph
 """
 
 from __future__ import annotations
@@ -84,6 +85,15 @@ CONFIG_REGISTRY: dict[str, RetrievalConfig] = {
         bm25=True,
         hybrid=True,
         rerank=True,
+    ),
+    "ast_hybrid_rerank_graph": RetrievalConfig(
+        chunker="ast",
+        strategy="hybrid",
+        vector=True,
+        bm25=True,
+        hybrid=True,
+        rerank=True,
+        graph_expansion=True,
     ),
 }
 

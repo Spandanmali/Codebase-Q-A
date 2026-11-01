@@ -40,6 +40,53 @@ def test_discover_files_filters_and_classifies_supported_text(
     ] is True
 
 
+def test_discover_files_supports_common_languages_and_skips_generated_content(
+    tmp_path: Path,
+) -> None:
+    files = {
+        "app.js": "const app = true;\n",
+        "component.tsx": "export const Component = () => null;\n",
+        "service.java": "class Service {}\n",
+        "worker.go": "package worker\n",
+        "main.rs": "fn main() {}\n",
+        "query.sql": "select 1;\n",
+        "page.html": "<html></html>\n",
+        "styles.scss": "body { color: red; }\n",
+        "Dockerfile": "FROM python:3.13\n",
+        "Makefile": "all:\n",
+        ".env.example": "DATABASE_URL=example\n",
+        "notes.rst": "Notes\n=====\n",
+    }
+    for relative_path, content in files.items():
+        path = tmp_path / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+    (tmp_path / ".env").write_text("SECRET=value\n", encoding="utf-8")
+    (tmp_path / "server.pem").write_text("private key\n", encoding="utf-8")
+    (tmp_path / "node_modules").mkdir()
+    (tmp_path / "node_modules" / "dependency.js").write_text("ignored\n", encoding="utf-8")
+    (tmp_path / "types.d.ts").write_text("declare const value: string;\n", encoding="utf-8")
+    (tmp_path / "app.min.js").write_text("minified\n", encoding="utf-8")
+
+    result = discover_files(tmp_path)
+
+    languages = {entry["path"]: entry["language"] for entry in result}
+    assert languages == {
+        "app.js": "javascript",
+        "component.tsx": "typescript",
+        "service.java": "java",
+        "worker.go": "go",
+        "main.rs": "rust",
+        "query.sql": "sql",
+        "page.html": "html",
+        "styles.scss": "scss",
+        "Dockerfile": "dockerfile",
+        "Makefile": "makefile",
+        ".env.example": "dotenv",
+        "notes.rst": "rst",
+    }
+
+
 def test_discover_files_skips_symlink_binary_and_oversized_files(tmp_path: Path) -> None:
     outside = tmp_path.parent / "outside-discovery.py"
     outside.write_text("secret = True\n", encoding="utf-8")

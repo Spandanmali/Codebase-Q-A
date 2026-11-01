@@ -8,22 +8,25 @@ from typing import Final
 
 import pathspec
 
+from .languages import EXTENSION_TO_LANGUAGE
+
 DEFAULT_MAX_FILE_SIZE_BYTES: Final = 500 * 1024
 DEFAULT_MAX_FILES: Final = 5_000
 
-_LANGUAGES: Final = {
-    ".json": "json",
-    ".md": "markdown",
-    ".py": "python",
-    ".toml": "toml",
-    ".yaml": "yaml",
-}
 _SKIPPED_DIRECTORIES: Final = {
     ".git",
+    ".gradle",
+    ".idea",
     "__pycache__",
     "build",
+    "coverage",
     "dist",
     "node_modules",
+    "out",
+    ".next",
+    "target",
+    "vendor",
+    ".venv",
     "venv",
 }
 _LOCKFILE_NAMES: Final = {
@@ -53,9 +56,25 @@ def _is_generated_or_lockfile(path: Path) -> bool:
         name in _LOCKFILE_NAMES
         or name.endswith(".lock")
         or ".min." in name
+        or ".bundle." in name
+        or name.endswith(".map")
+        or name.endswith(".d.ts")
         or name.endswith("_pb2.py")
         or name.endswith("_generated.py")
         or name.endswith(".generated.py")
+    )
+
+
+def _is_secret_file(path: Path) -> bool:
+    name = path.name.lower()
+    return (
+        name == ".env"
+        or name.endswith(".pem")
+        or name.endswith(".key")
+        or name.endswith(".p12")
+        or name.startswith("id_rsa")
+        or "secret" in name
+        or "credentials" in name
     )
 
 
@@ -125,8 +144,12 @@ def discover_files(
                 raise DiscoveryError(f"could not resolve {candidate}: {error}") from error
             if ignore_spec.match_file(relative):
                 continue
-            language = _LANGUAGES.get(candidate.suffix.lower())
-            if language is None or _is_generated_or_lockfile(candidate):
+            if _is_secret_file(candidate) or _is_generated_or_lockfile(candidate):
+                continue
+            language = EXTENSION_TO_LANGUAGE.get(candidate.name.lower())
+            if language is None:
+                language = EXTENSION_TO_LANGUAGE.get(candidate.suffix.lower())
+            if language is None:
                 continue
             try:
                 size = candidate.stat().st_size

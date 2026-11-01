@@ -107,6 +107,26 @@ class BM25Index:
         self._bm25 = BM25Okapi(documents) if documents else None
         return self
 
+    @classmethod
+    def load_from_file(cls, file_path: str | Path) -> BM25Index:
+        """Factory method to load a BM25 index directly from its json file path."""
+        path = Path(file_path)
+        if not path.is_file():
+            raise FileNotFoundError(f"BM25 index file does not exist: {path}")
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        
+        instance = cls(
+            persist_dir=path.parent,
+            repo=payload.get("repo", "unknown"),
+            commit=payload.get("commit", "unknown"),
+            chunker=payload.get("chunker", "unknown"),
+        )
+        instance._path = path
+        instance._chunk_ids = payload.get("chunk_ids", [])
+        documents = payload.get("documents", [])
+        instance._bm25 = BM25Okapi(documents) if documents else None
+        return instance
+
     def search(self, query: str, k: int) -> list[tuple[str, float]]:
         """Return up to ``k`` chunk IDs ranked by BM25 score."""
         if k <= 0:
@@ -133,3 +153,8 @@ class BM25Index:
     def path(self) -> Path:
         """Return the on-disk index path."""
         return self._path
+    
+    @property
+    def doc_ids(self) -> list[str]:
+        """Return chunk IDs indexed in BM25."""
+        return self._chunk_ids

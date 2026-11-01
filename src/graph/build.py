@@ -11,6 +11,7 @@ import networkx as nx
 
 from .calls import extract_call_edges
 from .extract import extract_files
+from .parsers import parser_for_path
 from .routes import extract_routes
 
 _NODE_TYPES = {"file", "function", "class", "route"}
@@ -56,10 +57,19 @@ def _attach_chunks(
 
 def _definition_id(file_path: str, definition: Mapping[str, Any]) -> str:
     kind = "class" if definition["type"] == "class" else "func"
-    symbol = definition["name"]
-    if definition.get("parent_class"):
-        symbol = f"{definition['parent_class']}.{symbol}"
+    symbol = _definition_symbol(definition)
     return f"{kind}:{file_path}::{symbol}"
+
+
+def _definition_symbol(definition: Mapping[str, Any]) -> str:
+    symbol = str(definition["name"])
+    parent_class = definition.get("parent_class")
+    parent_function = definition.get("parent_function")
+    if parent_function:
+        symbol = f"{parent_function}.{symbol}"
+    elif parent_class:
+        symbol = f"{parent_class}.{symbol}"
+    return symbol
 
 
 def _call_id(identifier: str, kind: str = "func") -> str:
@@ -90,12 +100,19 @@ def build_graph(
 ) -> nx.DiGraph:
     """Build a graph from Python files and optionally link nodes to chunks."""
     root = Path(repo_root).resolve()
-    paths = [Path(path).resolve() for path in file_paths]
+    paths = [
+        Path(path).resolve()
+        for path in file_paths
+        if Path(path).suffix.lower() == ".py" or parser_for_path(path) is not None
+    ]
     graph = nx.DiGraph()
     extracted = extract_files(paths, root)
     definitions: dict[str, dict[str, Any]] = {}
+    pending_imports: list[tuple[str, Mapping[str, Any]]] = []
 
     for result in extracted:
+        if result.get("skipped"):
+            continue
         file_path = _path(result["file_path"], root)
         line_count = len(Path(file_path).read_text(encoding="utf-8").splitlines()) or 1
         file_id = f"file:{file_path}"
@@ -106,13 +123,18 @@ def build_graph(
             start_line=1,
             end_line=line_count,
             chunk_ids=[],
+            external_imports=sorted(
+                {
+                    str(import_data["module"])
+                    for import_data in result["imports"]
+                    if import_data.get("external") and import_data.get("module")
+                }
+            ),
         )
         for definition in result["definitions"]:
             definition = {**definition, "file_path": file_path}
             node_id = _definition_id(file_path, definition)
-            symbol = definition["name"]
-            if definition.get("parent_class"):
-                symbol = f"{definition['parent_class']}.{symbol}"
+            symbol = _definition_symbol(definition)
             definitions[f"{file_path}::{symbol}"] = definition
             graph.add_node(
                 node_id,
@@ -121,11 +143,7 @@ def build_graph(
                 start_line=definition["start_line"],
                 end_line=definition["end_line"],
                 chunk_ids=[],
-                symbol=(
-                    f"{definition['parent_class']}.{definition['name']}"
-                    if definition.get("parent_class")
-                    else definition["name"]
-                ),
+                symbol=symbol,
             )
             graph.add_edge(file_id, node_id, type="defines")
             if definition.get("parent_class"):
@@ -134,13 +152,17 @@ def build_graph(
                     graph.add_edge(class_id, node_id, type="defines")
 
         for import_data in result["imports"]:
-            resolved = import_data.get("resolved_path") or _absolute_import_path(import_data, root)
-            if resolved:
-                target = f"file:{_path(resolved, root)}"
-                if target in graph:
-                    graph.add_edge(file_id, target, type="imports")
+            pending_imports.append((file_id, import_data))
 
-    for call in extract_call_edges(paths, root):
+    for file_id, import_data in pending_imports:
+        resolved = import_data.get("resolved_path") or _absolute_import_path(import_data, root)
+        if resolved:
+            target = f"file:{_path(resolved, root)}"
+            if target in graph:
+                graph.add_edge(file_id, target, type="imports")
+
+    python_paths = [path for path in paths if path.suffix.lower() == ".py"]
+    for call in extract_call_edges(python_paths, root):
         if call.get("target") is None:
             continue
         source = _call_id(str(call["source"]))
@@ -148,7 +170,7 @@ def build_graph(
         if source in graph and target in graph:
             graph.add_edge(source, target, type="calls")
 
-    for route in extract_routes(paths, root):
+    for route in extract_routes(python_paths, root):
         file_path = _path(route["file"], root)
         handler_symbol = route["handler"]
         handler_key = f"{file_path}::{handler_symbol}"
